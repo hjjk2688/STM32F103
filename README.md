@@ -1,43 +1,48 @@
 
-
 # STM32F103 주변장치별 동작 원리 및 실습
-**A Repository for Hands-on Practice with STM32F103 Peripherals, Culminating in a Bluetooth RC Car Project**
+**A Repository for Hands-on Practice with STM32F103 Peripherals, Culminating in a Hybrid Bluetooth RC Car with Obstacle Avoidance**
 
 ![C](https://img.shields.io/badge/Language-C-blue.svg)
 ![STM32CubeIDE](https://img.shields.io/badge/IDE-STM32CubeIDE-orange.svg)
 ![STM32F103](https://img.shields.io/badge/MCU-STM32F103-blueviolet.svg)
 
 
-
 ---
 
 ## 📖 개요 (Overview)
 
-이 레포지토리는 STM32F103 MCU의 핵심 주변장치들을 **HAL(Hardware Abstraction Layer) 라이브러리**를 기반으로 학습하고, 각 기능의 동작 원리를 깊이 있게 이해하기 위한 실습 코드 모음입니다. 기본적인 주변장치 제어 예제부터, 이를 응용한 최종 프로젝트 **블루투스 RC카**까지 포함하고 있습니다.
+이 레포지토리는 STM32F103 MCU의 핵심 주변장치들을 **HAL(Hardware Abstraction Layer) 라이브러리**를 기반으로 학습하고, 각 기능의 동작 원리를 깊이 있게 이해하기 위한 실습 코드 모음입니다. 기본적인 주변장치 제어 예제부터, 이를 모두 응용한 최종 프로젝트 **'장애물 감지 기능이 탑재된 하이브리드 블루투스 RC카'**까지 포함하고 있습니다.
 
 ---
 
-## 🏆 최종 프로젝트: 블루투스 RC카 (Final Project: Bluetooth RC Car)
+## 🏆 최종 프로젝트: 하이브리드 블루투스 RC카 (Final Project: Hybrid Bluetooth RC Car)
 
-이 레포지토리의 모든 기본 예제들을 종합하여 만든 최종 애플리케이션입니다. 스마트폰 앱과 블루투스 통신을 통해 DC 모터로 구동되는 RC카를 제어합니다.
-
-**더 상세한 구현 과정은 [RC_Bluetooth_README.md](./RC_Bluetooth/RC_Bluetooth_README.md) 파일에서 확인하실 수 있습니다.**
+이 레포지토리의 모든 기본 예제들을 종합하여 만든 최종 애플리케이션입니다. 기본적으로는 스마트폰의 블루투스 명령으로 조작하지만, **전방에 장애물이 감지되면 사용자의 명령을 무시하고 자동으로 정지하는 안전 기능**이 탑재된 스마트카입니다.
 
 #### 시스템 아키텍처
-`스마트폰 앱` → `블루투스 모듈 (HC-06)` → `STM32 (UART)` → `STM32 (GPIO/TIMER)` → `모터 드라이버 (L298N)` → `DC 모터`
+```
+[스마트폰 앱] ---> [블루투스 모듈] --(UART)-->+
+                                             |
+[초음파 센서] --(Trig/Echo)--> [STM32 MCU] --(판단 로직)--> [모터 드라이버] ---> [DC 모터]
+```
 
 #### 주요 기능 및 구현
-*   **블루투스 통신 (UART):**
-    *   `USART2`를 사용하여 블루투스 모듈(HC-06)과 연결합니다.
-    *   스마트폰 앱으로부터 'F'(전진), 'B'(후진), 'L'(좌회전), 'R'(우회전), 'S'(정지) 등의 제어 문자를 수신합니다.
-    *   `HAL_UART_Receive_IT`를 사용하여 데이터 수신 시 인터럽트 방식으로 즉각적인 제어 명령을 처리합니다.
+*   **하이브리드 제어 로직 (Hybrid Control Logic):**
+    *   `main` 함수의 `while(1)` 루프에서 주기적으로 초음파 센서로 전방 거리를 측정합니다.
+    *   동시에 UART 수신 인터럽트를 통해 스마트폰의 제어 명령('F', 'B', 'S' 등)을 대기합니다.
+    *   **핵심 기능:** 사용자가 'F'(전진) 명령을 내렸을 때, 측정된 전방 거리가 20cm 미만이면 **사용자 명령을 무시하고 자동으로 모터를 정지**시켜 충돌을 방지합니다. 거리가 20cm 이상일 때만 전진 명령을 수행합니다.
 
-*   **모터 속도 제어 (TIMER - PWM):**
-    *   `TIM2`와 `TIM3`를 PWM 생성 모드로 설정합니다.
-    *   모터 드라이버의 Enable(ENA, ENB) 핀에 PWM 신호를 인가하여 DC 모터의 속도를 제어합니다.
+*   **수동 조작 (Manual Control via Bluetooth):**
+    *   `USART2`와 `HAL_UART_Receive_IT`를 사용하여 블루투스 모듈(HC-06)로부터 제어 문자를 비동기 수신합니다.
+    *   수신된 문자에 따라 모터의 전진, 후진, 좌/우회전, 정지 동작을 결정합니다.
 
-*   **모터 방향 제어 (GPIO):**
-    *   모터 드라이버(L298N)의 방향 제어 핀(IN1, IN2, IN3, IN4)에 연결된 GPIO 핀들의 High/Low 상태를 조합하여 모터의 정회전/역회전을 제어합니다.
+*   **거리 측정 (Distance Measurement):**
+    *   `TIM1`을 마이크로초(us) 단위 시간 측정에 사용하고, `EXTI`로 Echo 핀의 상승/하강 엣지를 감지합니다.
+    *   `Trig` 핀에 10us 펄스를 보내 초음파를 발사하고, `Echo` 핀이 High로 유지되는 시간을 측정하여 cm 단위의 거리로 환산합니다.
+
+*   **모터 제어 (Motor Control):**
+    *   `TIM2`, `TIM3`의 PWM 모드를 사용하여 모터의 속도를 제어합니다.
+    *   GPIO 출력 핀으로 모터 드라이버(L298N)의 방향을 제어합니다.
 
 ---
 
@@ -58,19 +63,16 @@
 
 ## 📌 필요 사항 (Hardware & Software)
 
-*   **공통**
+*   **하드웨어**
     *   STM32F103 기반 개발 보드 (NUCLEO-F103RB)
-    *   ST-LINK 디버거
-    *   USB to Serial 변환기
-*   **RC카 프로젝트용 추가 부품**
+    *   초음파 센서 (HC-SR04)
     *   블루투스 모듈 (HC-06 등)
     *   모터 드라이버 (L298N 등)
-    *   DC 모터 2개 이상
-    *   RC카 섀시 및 바퀴
+    *   DC 모터 2개 이상 및 바퀴, RC카 섀시
     *   모터 및 MCU 구동용 외부 전원 (배터리 등)
+    *   ST-LINK 디버거
 *   **소프트웨어**
     *   STM32CubeIDE (v1.9.0 이상 권장)
-    *   PC 시리얼 터미널 프로그램 (Tera Term, PuTTY 등)
     *   스마트폰 블루투스 시리얼 통신 앱
 
 ---
@@ -86,5 +88,5 @@
 
 ## ✍️ 작성자 (Author)
 
-*   **hjjk2688**
+*   **HJ*
 ````
