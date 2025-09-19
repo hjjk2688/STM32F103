@@ -1,5 +1,4 @@
-````markdown
-<div align="center">
+
 
 # STM32F103 주변장치별 동작 원리 및 실습
 **A Repository for Hands-on Practice with STM32F103 Peripherals, Culminating in a Bluetooth RC Car Project**
@@ -8,7 +7,7 @@
 ![STM32CubeIDE](https://img.shields.io/badge/IDE-STM32CubeIDE-orange.svg)
 ![STM32F103](https://img.shields.io/badge/MCU-STM32F103-blueviolet.svg)
 
-</div>
+
 
 ---
 
