@@ -118,53 +118,53 @@ PUTCHAR_PROTOTYPE {
  8000180:	08002678 	.word	0x08002678
  8000184:	20000084 	.word	0x20000084
 
-08000188 <Smartcar_forward>:
+08000188 <smartcar_forward>:
 
-void Smartcar_forward(){
+void smartcar_forward(){
  8000188:	b580      	push	{r7, lr}
  800018a:	af00      	add	r7, sp, #0
 	HAL_GPIO_WritePin(RR_F_GPIO_Port, RR_F_Pin, 1); // PB8  뒤앞   21 22  RR_F /Right_RearForward
  800018c:	2201      	movs	r2, #1
  800018e:	f44f 7180 	mov.w	r1, #256	@ 0x100
- 8000192:	4816      	ldr	r0, [pc, #88]	@ (80001ec <Smartcar_forward+0x64>)
+ 8000192:	4816      	ldr	r0, [pc, #88]	@ (80001ec <smartcar_forward+0x64>)
  8000194:	f000 feb8 	bl	8000f08 <HAL_GPIO_WritePin>
 	HAL_GPIO_WritePin(RR_B_GPIO_Port, RR_B_Pin, 0); // PB9  뒤백	RR_B Right_RearBack
  8000198:	2200      	movs	r2, #0
  800019a:	f44f 7100 	mov.w	r1, #512	@ 0x200
- 800019e:	4813      	ldr	r0, [pc, #76]	@ (80001ec <Smartcar_forward+0x64>)
+ 800019e:	4813      	ldr	r0, [pc, #76]	@ (80001ec <smartcar_forward+0x64>)
  80001a0:	f000 feb2 	bl	8000f08 <HAL_GPIO_WritePin>
 
 	HAL_GPIO_WritePin(RF_F_GPIO_Port, RF_F_Pin, 1); // PB4 앞앞  17 16 RF_F
  80001a4:	2201      	movs	r2, #1
  80001a6:	2110      	movs	r1, #16
- 80001a8:	4810      	ldr	r0, [pc, #64]	@ (80001ec <Smartcar_forward+0x64>)
+ 80001a8:	4810      	ldr	r0, [pc, #64]	@ (80001ec <smartcar_forward+0x64>)
  80001aa:	f000 fead 	bl	8000f08 <HAL_GPIO_WritePin>
 	HAL_GPIO_WritePin(RF_B_GPIO_Port, RF_B_Pin, 0); // PB5 앞백 RF_B
  80001ae:	2200      	movs	r2, #0
  80001b0:	2120      	movs	r1, #32
- 80001b2:	480e      	ldr	r0, [pc, #56]	@ (80001ec <Smartcar_forward+0x64>)
+ 80001b2:	480e      	ldr	r0, [pc, #56]	@ (80001ec <smartcar_forward+0x64>)
  80001b4:	f000 fea8 	bl	8000f08 <HAL_GPIO_WritePin>
 
 	HAL_GPIO_WritePin(LR_F_GPIO_Port, LR_F_Pin, 1); // PA9  뒤앞 LR_F 12  27 left_RearForward
  80001b8:	2201      	movs	r2, #1
  80001ba:	f44f 7100 	mov.w	r1, #512	@ 0x200
- 80001be:	480c      	ldr	r0, [pc, #48]	@ (80001f0 <Smartcar_forward+0x68>)
+ 80001be:	480c      	ldr	r0, [pc, #48]	@ (80001f0 <smartcar_forward+0x68>)
  80001c0:	f000 fea2 	bl	8000f08 <HAL_GPIO_WritePin>
 	HAL_GPIO_WritePin(LR_B_GPIO_Port, LR_B_Pin, 0); // PB10 뒤백 LR_B left_RearBack
  80001c4:	2200      	movs	r2, #0
  80001c6:	f44f 6180 	mov.w	r1, #1024	@ 0x400
- 80001ca:	4808      	ldr	r0, [pc, #32]	@ (80001ec <Smartcar_forward+0x64>)
+ 80001ca:	4808      	ldr	r0, [pc, #32]	@ (80001ec <smartcar_forward+0x64>)
  80001cc:	f000 fe9c 	bl	8000f08 <HAL_GPIO_WritePin>
 
 	HAL_GPIO_WritePin(LF_F_GPIO_Port, LF_F_Pin, 1); // 앞앞 PB3 25 26 LF_F left_ForwardForward
  80001d0:	2201      	movs	r2, #1
  80001d2:	2108      	movs	r1, #8
- 80001d4:	4805      	ldr	r0, [pc, #20]	@ (80001ec <Smartcar_forward+0x64>)
+ 80001d4:	4805      	ldr	r0, [pc, #20]	@ (80001ec <smartcar_forward+0x64>)
  80001d6:	f000 fe97 	bl	8000f08 <HAL_GPIO_WritePin>
 	HAL_GPIO_WritePin(LF_B_GPIO_Port, LF_B_Pin, 0); // 앞백 PA10 LF_B left_ForwardBack
  80001da:	2200      	movs	r2, #0
  80001dc:	f44f 6180 	mov.w	r1, #1024	@ 0x400
- 80001e0:	4803      	ldr	r0, [pc, #12]	@ (80001f0 <Smartcar_forward+0x68>)
+ 80001e0:	4803      	ldr	r0, [pc, #12]	@ (80001f0 <smartcar_forward+0x68>)
  80001e2:	f000 fe91 	bl	8000f08 <HAL_GPIO_WritePin>
 }
  80001e6:	bf00      	nop
@@ -444,8 +444,8 @@ int main(void)
 		  printf("forward\n");
  80003ce:	4819      	ldr	r0, [pc, #100]	@ (8000434 <main+0x90>)
  80003d0:	f001 fdb8 	bl	8001f44 <puts>
-		  Smartcar_forward();
- 80003d4:	f7ff fed8 	bl	8000188 <Smartcar_forward>
+		  smartcar_forward();
+ 80003d4:	f7ff fed8 	bl	8000188 <smartcar_forward>
  80003d8:	e7ef      	b.n	80003ba <main+0x16>
 
 	  }

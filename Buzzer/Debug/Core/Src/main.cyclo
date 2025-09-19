@@ -1,0 +1,9 @@
+../Core/Src/main.c:179:6:play_tone	2
+../Core/Src/main.c:210:6:play_mario_theme	2
+../Core/Src/main.c:216:6:play_merry_christmas	2
+../Core/Src/main.c:227:5:main	1
+../Core/Src/main.c:277:6:SystemClock_Config	3
+../Core/Src/main.c:313:13:MX_TIM1_Init	7
+../Core/Src/main.c:384:13:MX_USART2_UART_Init	2
+../Core/Src/main.c:415:13:MX_GPIO_Init	1
+../Core/Src/main.c:460:6:Error_Handler	1

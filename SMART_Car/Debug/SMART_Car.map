@@ -2031,9 +2031,9 @@ LOAD C:/ST/STM32CubeIDE_1.18.1/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
  .text.__io_putchar
                 0x0800014c       0x3c ./Core/Src/main.o
                 0x0800014c                __io_putchar
- .text.Smartcar_forward
+ .text.smartcar_forward
                 0x08000188       0x6c ./Core/Src/main.o
-                0x08000188                Smartcar_forward
+                0x08000188                smartcar_forward
  .text.smartcar_back
                 0x080001f4       0x6c ./Core/Src/main.o
                 0x080001f4                smartcar_back

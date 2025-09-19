@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "stdio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -72,7 +73,7 @@ PUTCHAR_PROTOTYPE {
 
 }
 
-void Smartcar_forward(){
+void smartcar_forward(){
 	HAL_GPIO_WritePin(RR_F_GPIO_Port, RR_F_Pin, 1); // PB8  뒤앞   21 22  RR_F /Right_RearForward
 	HAL_GPIO_WritePin(RR_B_GPIO_Port, RR_B_Pin, 0); // PB9  뒤백	RR_B Right_RearBack
 
@@ -187,7 +188,7 @@ int main(void)
 	  HAL_UART_Receive(&huart2, &check, 1, HAL_MAX_DELAY);
 	  if(check=='w'){
 		  printf("forward\n");
-		  Smartcar_forward();
+		  smartcar_forward();
 
 	  }
 	  else if(check=='a'){
