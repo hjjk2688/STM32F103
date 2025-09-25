@@ -34,7 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define MEDIAN_FILTER_SIZE 5
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,13 +50,18 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-uint8_t transmit[256];
 
-uint8_t rx3_data;
-uint8_t rx2_data;
+// --- 전역 변수: 인터럽트와 main 함수 간의 데이터 공유를 위해 사용 ---
+uint8_t rx3_data; // huart3 (블루투스) 수신용 임시 1바이트 버퍼
+uint8_t rx2_data; // huart2 (PC) 수신용 임시 1바이트 버퍼
+volatile char g_rx3_command = 'p'; // 블루투스로부터 수신된 최종 명령을 저장. 'p'(stop)을 기본값으로 설정. volatile 키워드는 인터럽트에 의해 값이 언제든지 바뀔 수 있음을 컴파일러에게 알림.
 
-volatile uint8_t new_data_flag = 0; // 새 데이터 수신 여부를 알리는 플래그
-volatile uint32_t last_rx_time = 0; // 마지막으로 데이터를 수신한 시간
+// 초음파 센서 관련 변수
+int right_history[MEDIAN_FILTER_SIZE];
+int left_history[MEDIAN_FILTER_SIZE];
+int history_index = 0;
+volatile int g_final_dist_left = 9999;  // 필터링된 최종 왼쪽 거리 값
+volatile int g_final_dist_right = 9999; // 필터링된 최종 오른쪽 거리 값
 
 int HIGH = 1;
 int LOW = 0;
@@ -85,8 +90,6 @@ PUTCHAR_PROTOTYPE {
 		HAL_UART_Transmit(&huart2, (uint8_t*) "\r", 1, 0xFFFF);
 	HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, 0xFFFF);
 
-//	HAL_UART_Transmit(&huart3, (uint8_t*) "\r", 1, 0xFFFF);
-//	HAL_UART_Transmit(&huart3, (uint8_t*) &ch, 1, 0xFFFF);
 	return ch;
 }
 
@@ -160,6 +163,7 @@ void smartcar_stop(){
 	HAL_GPIO_WritePin(LF_B_GPIO_Port, LF_B_Pin, 0); // 앞백 PA10 LF_B left_ForwardBack
 }
 
+// --- 초음파 센서 관련 함수들 ---
 void timer_start(TIM_HandleTypeDef *htim) { //초기화
 	HAL_TIM_Base_Start(htim);
 }
@@ -178,7 +182,7 @@ void trig(GPIO_TypeDef *GPIO_Port, uint16_t GPIO_Pin, TIM_HandleTypeDef *htim) {
 }
 
 long unsigned int echo(GPIO_TypeDef *GPIO_Port, uint16_t GPIO_Pin,
-		TIM_HandleTypeDef *htim) { // 에코 (타임아웃 추가)
+	TIM_HandleTypeDef *htim) { // 에코 (타임아웃 추가)
 	long unsigned int echo = 0;
 	uint32_t start_time;
 	uint32_t timeout = 30000; // us, 최대 유효 측정시간보다 길게 설정
@@ -201,35 +205,8 @@ long unsigned int echo(GPIO_TypeDef *GPIO_Port, uint16_t GPIO_Pin,
 	else
 		return 0;
 }
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	//2- 컴퓨터 - mcu   recive - 컴퓨터 -> mcu / tran - mcu -> 컴퓨터
-	//3 - mcu - 핸드폰 / recive - 핸드폰 -> mcu / tran - mcu -> 핸드폰
 
-	if (huart->Instance == USART3) {
-
-//		HAL_UART_Transmit(&huart2, &rx3_data, sizeof(rx3_data), 10);
-//		HAL_UART_Receive_IT(&huart3, &rx3_data, sizeof(rx3_data));
-//		new_data_flag = 1;              // 새 데이터가 있다고 플래그 설정
-//		last_rx_time = HAL_GetTick();
-
-		HAL_UART_Transmit(&huart2, &rx3_data, 1, 10);
-		HAL_UART_Receive_IT(&huart3, &rx3_data, 1);
-
-	} else if (huart->Instance == USART2) {
-
-//		HAL_UART_Transmit(&huart3, &rx2_data, sizeof(rx2_data), 10);
-//		HAL_UART_Receive_IT(&huart2, &rx2_data, sizeof(rx2_data));
-
-		HAL_UART_Transmit(&huart3, &rx2_data, 1, 10);
-		HAL_UART_Receive_IT(&huart2, &rx2_data, 1);
-
-	}
-}
-#define MEDIAN_FILTER_SIZE 5
-int right_history[MEDIAN_FILTER_SIZE];
-int left_history[MEDIAN_FILTER_SIZE];
-int history_index = 0;
-
+// --- 미디안 필터 관련 함수들 ---
 int compare_int(const void *a, const void *b) {
 	return (*(int*) a - *(int*) b);
 }
@@ -238,9 +215,38 @@ int get_median(int history[]) {
 	int temp_history[MEDIAN_FILTER_SIZE];
 	memcpy(temp_history, history, sizeof(temp_history));
 	qsort(temp_history, MEDIAN_FILTER_SIZE, sizeof(int), compare_int);
-	return temp_history[MEDIAN_FILTER_SIZE] / 2;
-
+	// [버그 수정] 배열의 크기로 나누는 것이 아니라, 중앙 인덱스의 값을 반환해야 합니다.
+	return temp_history[MEDIAN_FILTER_SIZE / 2];
 }
+
+
+/**
+ * @brief UART 수신 완료 콜백 함수 (역할: 우편 배달부)
+ * @note  이 함수는 인터럽트에 의해 호출되므로, 최대한 짧고 빠르게 유지해야 합니다.
+ *        복잡한 계산이나 지연(Delay)을 포함해서는 안 됩니다.
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+  //2- 컴퓨터 - mcu  / recive - 컴퓨터 -> mcu / tran - mcu -> 컴퓨터
+  //3 - mcu - 핸드폰 / recive - 핸드폰 -> mcu / tran - mcu -> 핸드폰
+
+
+	// 블루투스(huart3)로부터 명령이 수신되면
+	if (huart->Instance == USART3) {
+		// 수신된 명령(rx3_data)을 전역 변수(g_rx3_command)에 저장만 하고 즉시 종료합니다.
+		g_rx3_command = rx3_data;
+		// 다음 1바이트 수신을 위해 인터럽트를 다시 활성화합니다.
+		HAL_UART_Receive_IT(&huart3, &rx3_data, 1);
+
+	} else if (huart->Instance == USART2) { // PC로부터 명령이 수신되면
+		// PC에서 받은 데이터를 블루투스로 그대로 전달합니다 (에코백).
+		HAL_UART_Transmit(&huart3, &rx2_data, 1, 10);
+		// 다음 1바이트 수신을 위해 인터럽트를 다시 활성화합니다.
+		HAL_UART_Receive_IT(&huart2, &rx2_data, 1);
+	}
+}
+
+
+
 
 /* USER CODE END 0 */
 
@@ -278,103 +284,77 @@ int main(void)
   MX_TIM2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-	//printf("UART3 Receive Test\n");
-//	HAL_UART_Receive_IT(&huart3, &rx3_data, sizeof(rx3_data));
-//	HAL_UART_Receive_IT(&huart2, &rx2_data, sizeof(rx2_data));
+
+  // 양쪽 UART 채널에 대해 1바이트 수신 인터럽트를 최초로 활성화합니다.
 	HAL_UART_Receive_IT(&huart3, &rx3_data, 1);
 	HAL_UART_Receive_IT(&huart2, &rx2_data, 1);
 
+   // 초음파 센서용 타이머를 시작합니다.
 	timer_start(&htim1);
-	timer_start(&htim2);
-	long unsigned int echo_time_right;
-	long unsigned int echo_time_left;
-	int dist_right;
-	int dist_left;
+	timer_start(&htim2);;
 
 	uint32_t last_sensor_read_time = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+	/**
+	   * @brief 메인 루프 (역할: 사령관)
+	   * @note  이 루프는 모든 결정을 내리는 최종 책임자입니다.
+	   *        주기적으로 센서 상태를 읽고, 실시간으로 들어온 명령을 확인하여
+	   *        모든 상황을 종합해 최종적으로 모터를 제어합니다.
+	   */
 	while (1) {
-		if (HAL_GetTick() - last_sensor_read_time > 500) {
-			last_sensor_read_time = HAL_GetTick(); // 현재 시간 기록
+		// --- 1. 센서 측정 (주기적으로 실행) ---
+				if (HAL_GetTick() - last_sensor_read_time > 100) { // 100ms 마다 센서 확인
+					last_sensor_read_time = HAL_GetTick();
 
-			trig(Trigger_GPIO_Port, Trigger_Pin, &htim1);
-			echo_time_right = echo(Echo_GPIO_Port, Echo_Pin, &htim1);
+					long unsigned int echo_time_right = echo(Echo_GPIO_Port, Echo_Pin, &htim1);
+					long unsigned int echo_time_left = echo(Echo2_GPIO_Port, Echo2_Pin, &htim2);
 
-			trig(Trigger2_GPIO_Port, Trigger2_Pin, &htim2);
-			echo_time_left = echo(Echo2_GPIO_Port, Echo2_Pin, &htim2);
+					int dist_right = 9999;
+					int dist_left = 9999;
 
-			if (echo_time_right != 0 || echo_time_left != 0) {
-				dist_right = (int) (17 * echo_time_right / 100);
-				dist_left = (int) (17 * echo_time_left / 100);
-				printf("1: Distance = %d(mm) | 2: Distance = %d(mm)\n",
-						dist_right, dist_left);
-				if (dist_right <= 100 && dist_left <= 100) {
+					if (echo_time_right > 0) {
+						dist_right = (int) (17 * echo_time_right / 100);
+					}
+					if (echo_time_left > 0) {
+						dist_left = (int) (17 * echo_time_left / 100);
+					}
+
+					// 필터 기록용 배열에 현재 거리 값을 추가합니다.
+					right_history[history_index] = dist_right;
+					left_history[history_index] = dist_left;
+					history_index = (history_index + 1) % MEDIAN_FILTER_SIZE; // 인덱스를 순환시킵니다.
+
+					// 필터링된 최종 거리값을 전역 변수에 업데이트하여 while 루프의 다른 부분에서 사용하게 합니다.
+					g_final_dist_right = get_median(right_history);
+					g_final_dist_left = get_median(left_history);
+
+					// PC 터미널로 현재 거리 값을 출력합니다.
+					printf("Left: %d mm, Right: %d mm\r\n", g_final_dist_left, g_final_dist_right);
+				}
+
+				// --- 2. 모터 제어 결정 (매 루프마다 항상 실행) ---
+				int obstacle_detected = (g_final_dist_left < 200 || g_final_dist_right < 200);
+
+				// 인터럽트가 업데이트한 최신 명령(g_rx3_command)을 확인합니다.
+				if (g_rx3_command == 'w' && !obstacle_detected) {
+					smartcar_forward();
+				} else if (g_rx3_command == 's') {
+					smartcar_back();
+				} else if (g_rx3_command == 'a') {
+					smartcar_left();
+				} else if (g_rx3_command == 'd') {
+					smartcar_right();
+				} else { // 'p'(stop) 명령을 받았거나, 전진 중 장애물이 감지된 경우
 					smartcar_stop();
 				}
 
-			} else {
-				printf("Out of Range!\n");
+				// 전체 루프가 너무 빨리 돌지 않도록 하여 CPU 점유율을 낮춥니다.
+				HAL_Delay(20);
 			}
-
-
-
-
-		}
-		// 1. 블루투스 제어 확인 (매 루프마다 즉시 확인)
-		// 거리 계산 (mm 단위)                                                           │
-//		dist_right = (echo_time_right > 0) ?(int) (17 * echo_time_right / 100) : 9999;
-//		dist_left =	 (echo_time_left > 0) ? (int) (17 * echo_time_left / 100) : 9999;
-
-		// 필터에 현재 값 추가
-		if (echo_time_right > 0) {
-				dist_right = (int) (17 * echo_time_right / 100);
-			} else {
-				dist_right = 9999;
-			}
-			if (echo_time_left > 0) {
-				dist_left = (int) (17 * echo_time_left / 100);
-			} else {
-				dist_left = 9999;
-			}
-
-		right_history[history_index] = dist_right;
-		left_history[history_index] = dist_left;
-		history_index = (history_index + 1) % MEDIAN_FILTER_SIZE; // 인덱스 순환
-
-
-
-
-		// 안정화된 거리 가져오기
-		int final_dist_right = get_median(right_history);
-		int final_dist_left = get_median(left_history);
-		int obstacle_detected = 0;
-
-		// 자동 정지 로직: 전진 중일 때만 장애물 감지
-		if (final_dist_right < 250 || final_dist_left < 250) {
-			obstacle_detected = 1;
-		}
-
-		if (rx3_data == 'w' && obstacle_detected == 0) {
-			smartcar_forward();
-		} else if (rx3_data == 'w' && obstacle_detected == 1) {
-			smartcar_stop();
-		} else if (rx3_data == 'a') {
-			smartcar_left();
-		} else if (rx3_data == 'd') {
-			smartcar_right();
-		} else if (rx3_data == 's') {
-
-			smartcar_back();
-		} else if (rx3_data == 'p') {
-			smartcar_stop();
-		}
-		// 2. 500ms 마다 초음파 센서 확인 (논블로킹 방식)
-
-
-	}
 
     /* USER CODE END WHILE */
 
