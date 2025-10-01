@@ -2,9 +2,11 @@
 
 ### 문서 관리 정보
 - 문서 ID: RC-CAR-DO178C-001-Rev1
-- 버전 & 날짜 : 1.0 / 2025년 9월 19일
+- 버전 & 날짜 :
+    - 1.0 / 2025년 9월 19일
+    - 1.1 / 2025년 10월 1일 (역할 분리 모델)          
 - 분류: 설계 보증 레벨 D (DAL-D)
-- 시스템: STM32F103 기반 RC카 제어 시스템
+- 시스템: STM32F103 기반 RC카 제어 시스템 - 역할 분리 모델
 - 주요 변경사항: 초기 문서 작성
 
 ---
@@ -46,7 +48,7 @@
 - 소프트웨어는 USART3를 통해 비동기적으로 제어 명령어를 수신해야 한다.
 
 **HLR-003**: 모터 제어
-- 소프트웨어는 수신된 명령어에 따라 4개의 모터를 제어하여 RC카를 전진, 후진, 좌회전, 우회전, 정지시켜야 한다.
+- 소프트웨어는 수신된 명령어와 센서 데이터를 종합하여 4개의 모터를 제어하고 RC카를 전진, 후진, 좌회전, 우회전, 정지시켜야 한다.
 
 **HLR-004**: 장애물 감지
 - 소프트웨어는 전방의 두 개 초음파 센서를 주기적으로 확인하여 장애물과의 거리를 측정해야 한다.
@@ -64,8 +66,8 @@
 - `MX_USART3_UART_Init()`: 블루투스 통신을 위해 9600 Baudrate로 UART를 설정한다.
 - `MX_TIM1_Init()`, `MX_TIM2_Init()`: 초음파 센서 거리 측정을 위한 타이머를 1MHz 클럭으로 설정한다.
 
-**LLR-002**: 명령어 수신 처리
-- `HAL_UART_RxCpltCallback()`: USART3로부터 1바이트 데이터 수신 시 `rx3_data` 변수에 저장하고 다음 수신을 대기한다.
+**LLR-002**: 명령어 수신 처리 (ISR)
+- `HAL_UART_RxCpltCallback()`: USART3로부터 1바이트 데이터 수신 시, 해당 문자를 전역 변수 `g_rx3_command`에 저장하고 다음 수신을 즉시 대기시킨다. 이 함수는 최소한의 역할만 수행한다.
 
 **LLR-003**: 모터 제어 함수 구현
 - `smartcar_forward()`: 모든 모터를 전진 방향으로 회전시킨다.
@@ -79,59 +81,68 @@
 - `echo()`: 해당 Echo 핀에서 HIGH 펄스의 길이를 마이크로초(us) 단위로 측정하여 반환한다. 타임아웃(30000us)을 적용한다.
 
 **LLR-005**: 거리 계산 및 필터링
-- `main()` 루프 내에서 500ms 주기로 센서를 읽는다.
+- `main()` 루프 내에서 주기적으로 센서를 읽는다.
 - 측정된 `echo_time`을 `(17 * echo_time / 100)` 공식을 사용하여 mm 단위 거리로 변환한다.
 - `get_median()`: 5개의 최근 거리 측정값 중 중간값을 반환하여 노이즈를 제거한다.
 
-**LLR-006**: 주행 로직 구현
-- `main()` 루프에서 `rx3_data` 변수 값을 확인한다.
-- 'w' 수신 시, `obstacle_detected` 플래그가 0이면 `smartcar_forward()` 호출, 1이면 `smartcar_stop()` 호출.
-- 'a', 'd', 's', 'p' 수신 시 각각 `smartcar_left()`, `smartcar_right()`, `smartcar_back()`, `smartcar_stop()`을 호출한다.
+**LLR-006**: 주행 로직 구현 (Main Loop)
+- `main()` 루프는 `g_rx3_command` 변수 값을 지속적으로 확인한다.
+- 처리할 명령어가 있으면, 해당 명령어를 지역 변수로 복사하고 `g_rx3_command`를 즉시 초기화한다.
+- 'w' 명령 처리 시, `obstacle_detected` 플래그가 0이면 `smartcar_forward()` 호출, 1이면 `smartcar_stop()` 호출.
+- 'a', 'd', 's', 'p' 명령에 따라 각각 `smartcar_left()`, `smartcar_right()`, `smartcar_back()`, `smartcar_stop()`을 호출한다.
 
 ---
 
 ## 3. 소프트웨어 설계 표준 (SDS)
-#### 3.1 아키텍처 설계
+#### 3.1 아키텍처 설계: 역할 분리 모델
+
+본 시스템은 **ISR(인터럽트 서비스 루틴)**과 **Main Loop(`while(1)`)**의 역할을 명확히 분리한 비동기식 이벤트 처리 모델을 채택하여 안정성과 확장성을 확보했다.
+
+- **ISR ("The Mail Carrier")**: `HAL_UART_RxCpltCallback` 함수는 '우편배달부'처럼 행동한다. 블루투스 모듈에서 명령어가 도착하면, 그저 수신된 문자 하나를 전역 변수 `g_rx3_command`라는 '우편함'에 넣어두는 역할만 하고 즉시 다음 수신을 준비한다. ISR은 절대 복잡한 계산이나 결정을 내리지 않는다.
+
+- **Main Loop ("The Commander")**: `main` 함수의 `while(1)` 루프는 시스템의 '사령관'이다. 이 루프는 매우 빠른 속도로 반복 실행되며, 주기적으로 '우편함'(`g_rx3_command`)을 확인하고, 동시에 초음파 센서 데이터도 읽어온다. 이 모든 정보를 종합하여 최종적으로 어떤 모터 제어 함수를 호출할지 결정한다. 이로써 모든 결정은 `main` 루프에서 일관되게 처리된다.
+
 ```
 STM32_RC_Car_Controller
 ├── HAL_Driver (STM32 Hardware Abstraction Layer)
 ├── Application
 │   ├── main()
 │   │   ├── System_Initialization
-│   │   └── Main_Loop
-│   │       ├── Ultrasonic_Sensor_Handler (Non-blocking)
-│   │       └── Bluetooth_Command_Processor
-│   ├── UART_Callback_Handler
+│   │   └── Main_Loop ("The Commander")
+│   │       ├── Check_Bluetooth_Command()
+│   │       ├── Read_Ultrasonic_Sensors()
+│   │       └── Execute_Motor_Control()
+│   ├── ISR ("The Mail Carrier")
 │   │   └── HAL_UART_RxCpltCallback()
 │   └── Motor_Control_Module
 │       ├── smartcar_forward()
 │       ├── smartcar_back()
-│       ├── smartcar_left()
-│       ├── smartcar_right()
-│       └── smartcar_stop()
+│       └── ...
 └── Error_Handler
 ```
 
 #### 3.2 데이터 구조 설계
 - `UART_HandleTypeDef huart3`: 블루투스 통신용 핸들
 - `TIM_HandleTypeDef htim1`, `htim2`: 초음파 센서용 타이머 핸들
-- `uint8_t rx3_data`: 수신된 블루투스 명령어를 저장하는 변수
+- `volatile uint8_t g_rx3_command`: ISR이 수신한 블루투스 명령어를 저장하는 전역 변수. `volatile` 키워드를 통해 최적화로 인한 값의 누락을 방지한다.
+- `uint8_t rx3_data`: UART 수신 버퍼용 임시 변수.
 - `int right_history[5]`, `left_history[5]`: 센서 값 필터링을 위한 배열
 
 #### 3.3 주요 함수 설계
 **핵심 함수**:
-- `main()`: 전체 프로세스 제어, 시스템 초기화 및 메인 루프 실행
-- `HAL_UART_RxCpltCallback()`: 블루투스(UART) 데이터 수신 처리
-- `smartcar_*()`: 전/후/좌/우/정지 모터 제어 함수
-- `trig()`, `echo()`: 초음파 센서 제어 및 거리 측정
-- `get_median()`: 센서 데이터 안정화를 위한 미디언 필터
+- `main()`: **(The Commander)** 전체 프로세스 제어. 시스템 초기화 후, 메인 루프에서 명령어와 센서 데이터를 바탕으로 모든 결정을 내린다.
+- `HAL_UART_RxCpltCallback()`: **(The Mail Carrier)** 블루투스(UART) 데이터 수신 시 `g_rx3_command` 변수에 값을 저장하는 최소한의 역할만 수행한다.
+- `smartcar_*()`: 전/후/좌/우/정지 모터 제어 함수.
+- `trig()`, `echo()`: 초음파 센서 제어 및 거리 측정.
+- `get_median()`: 센서 데이터 안정화를 위한 미디언 필터.
 
-**명령어 처리 콜백 함수**:
+**명령어 수신 콜백 함수 (ISR)**:
 ```c
+// ISR: The Mail Carrier
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-  if (huart->Instance == USART3) { // 블루투스 모듈 연결 확인
-    // 수신된 데이터를 PC로 전달 (디버깅용)
-    HAL_UART_Transmit(&huart2, &rx3_data, 1, 10); 
+  if (huart->Instance == USART3) { // 블루투스 모듈(USART3)로부터 수신했는지 확인
+    g_rx3_command = rx3_data; // 수신된 명령어를 전역 변수(우편함)에 저장
+    
     // 다음 1바이트를 인터럽트 방식으로 다시 수신 대기
     HAL_UART_Receive_IT(&huart3, &rx3_data, 1);
   }
